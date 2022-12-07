@@ -1,0 +1,9 @@
+name: "Placarded & LHCO Properties"
+
+output_dir: "docs"
+output:
+  html_document:
+    theme: yeti
+    highlight: textmate
+    
+    

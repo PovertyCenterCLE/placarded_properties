@@ -1,0 +1,45 @@
+---
+title: "Placarded and LHCO Properties through 11/14/2022"
+output: html_document
+date: '2022-12-06'
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sf)
+library(mapview)
+library(here)
+library(tidyverse)
+spa <- st_read("D:/ArcIMS/data 2010/Neighborhoods/City_of_Cleveland_Neighborhoods_2012_no_lake.shp")
+
+```
+
+
+```{r echo=FALSE}
+
+spa_a <- spa %>%
+  st_centroid()
+
+spa_b <- spa_a %>%
+  mutate(
+    lng = map_dbl(1:34, ~spa_a[["geometry"]][[.x]][[1]]),
+    lat = map_dbl(1:34, ~spa_a[["geometry"]][[.x]][[2]])) %>%
+  st_set_geometry(NULL)
+
+spa2 <- spa %>%
+  left_join(spa_b)
+
+spa3 <- spa2 %>%
+  mutate(
+    spa3 = case_when(
+      lng < spa2$lng[spa2$SPA_NAME == "Ohio City"] ~ "West",
+      lng > spa2$lng[spa2$SPA_NAME == "Broadway-Slavic Village"] ~ "East",
+      TRUE ~ "Central"
+    ))
+rm(spa_a, spa_b, spa2)
+# mapview(spa3, zcol = "spa3")
+
+
+```
+

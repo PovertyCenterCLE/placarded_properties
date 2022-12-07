@@ -1,0 +1,449 @@
+---
+title: "Placarded and LHCO Properties through 11/14/2022"
+output: html_document
+date: '2022-12-06'
+---
+
+<br>
+<br>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(knitr.kable.NA = '')
+library(sf)
+library(leafem)
+library(leaflet)
+library(leaflet.extras)
+library(kableExtra)
+library(here)
+library(tidyverse)
+dat <- read_rds(here("data", "dat.rds"))
+set.seed(1)
+dat_order <- sample(1:nrow(dat), size = nrow(dat), replace = FALSE)
+
+dat$order <- dat_order
+dat <- dat %>% 
+  arrange(order)
+
+by_spa <- dat %>% 
+  st_set_geometry(NULL) %>% 
+  add_count(region) %>% 
+  ungroup() %>% 
+  group_by(SPA_NAME) %>% 
+  summarise(
+    region = first(region),
+    n_spa = n(), 
+    n_region = first(n)
+  ) %>% 
+  ungroup()
+
+spa_region <- read_rds(here("data", "spa_region_ref.rds"))
+
+
+
+spa <- st_read("D:/ArcIMS/data 2010/Neighborhoods/City_of_Cleveland_Neighborhoods_2012_no_lake.shp") %>% st_transform(crs = '+proj=longlat +datum=WGS84') %>% 
+  left_join(spa_region) %>% 
+  left_join(by_spa)
+
+spa <- spa %>% 
+  mutate(
+    n_spa = if_else(is.na(n_spa), NA_integer_, n_spa), 
+    n_region = case_when(
+      is.na(n_region) & region == "East" ~ first(by_spa$n_region[by_spa$region == "East"]), 
+      is.na(n_region) & region == "Central" ~ first(by_spa$n_region[by_spa$region == "Central"]), 
+      is.na(n_region) & region == "West" ~ first(by_spa$n_region[by_spa$region == "West"]), 
+      TRUE ~ n_region
+    )
+  )
+
+char <- read_rds(here( "data", "parcel_char.rds"))
+
+char_by_spa <- char %>% 
+  group_by(SPA_NAME) %>% 
+  summarise(
+    n = n(),
+    n_poor = length(which(condition %in% c("Fair", "Poor", "Sound value (c)", "Unsound", "Very poor"))),
+    med_yrbuilt = median(yrbuilt, na.rm = T),
+    n_1978 = length(which(yrbuilt < 1978)), 
+    pct_poor = round(n_poor / n * 100, 2), 
+    pct_1978 = round(n_1978 / n * 100, 2)
+      ) %>% 
+  ungroup()
+
+char_by_region <- char %>% 
+  group_by(region) %>% 
+  summarise(
+    n = n(),
+    n_poor = length(which(condition %in% c("Fair", "Poor", "Sound value (c)", "Unsound", "Very poor"))),
+    med_yrbuilt = median(yrbuilt, na.rm = T),
+    n_1978 = length(which(yrbuilt < 1978)), 
+    pct_poor = round(n_poor / n * 100, 2), 
+    pct_1978 = round(n_1978 / n * 100, 2)
+      ) %>% 
+  ungroup()
+
+spa <- spa %>% 
+  left_join(char_by_spa)
+
+
+char_by_spa <- char %>% 
+  group_by(SPA_NAME) %>% 
+  summarise(
+    n = n(),
+    region = first(region),
+    n_poor = length(which(condition %in% c("Fair", "Poor", "Sound value (c)", "Unsound", "Very poor"))),
+    med_yrbuilt = median(yrbuilt, na.rm = T),
+    n_1978 = length(which(yrbuilt < 1978)), 
+    pct_poor = round(n_poor / n * 100, 2), 
+    pct_1978 = round(n_1978 / n * 100, 2)
+      ) %>% 
+  ungroup() %>% 
+  select(region, everything())
+
+```
+
+
+
+This document provides analysis of the homes issued a LHCO or placarded in the City of Cleveland through November 14, 2022. The city's 34 neighborhoods (SPAs) were first grouped into one of three broader regions- East, Central, and West. The table below breaks down the SPAs within each region, and the number of LHCO/placarded properties.
+
+<br>
+<br>
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+spa2 <- spa %>% 
+  st_set_geometry(NULL) %>% 
+  select(SPA_NAME, region, n_spa) %>% 
+  mutate( n_spa = if_else(is.na(n_spa), 0L, n_spa)) %>% 
+  group_by(region) %>% 
+  arrange(SPA_NAME) %>% 
+  mutate(id = row_number()) %>%
+  ungroup() %>% 
+  pivot_wider(names_from = region, values_from = c(SPA_NAME, n_spa)) %>% 
+  select(ends_with("East"), ends_with("Central"), ends_with("West") )
+
+spa2 %>% 
+  add_row(SPA_NAME_East = "Total", n_spa_East = sum(spa2$n_spa_East, na.rm = T), SPA_NAME_Central = "Total", n_spa_Central = sum(spa2$n_spa_Central, na.rm = T),
+          SPA_NAME_West = "Total", n_spa_West = sum(spa2$n_spa_West, na.rm = T)) %>% 
+  kbl(
+    col.names = c("SPA", "parcels", "SPA", "parcels", "SPA", "parcels"), 
+    full_width = TRUE
+    ) %>% 
+  kable_styling("striped") %>% 
+  add_header_above(c("East" = 2, "Central" = 2, "West" = 2) )
+
+```
+
+
+<br>
+<br>
+
+
+Below, the first two maps show the specific locations and overall density of the 842 placarded/LHCO properties. 
+
+The next three maps use data on parcel characteristics obtained from the Cuyahoga County Auditor to illustrate patterns in the age and quality/condition of the city's residential housing stock. 
+
+##  {.tabset}
+
+
+
+
+### LHCO- Addresses
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+
+    
+pal <- colorFactor("viridis", domain = spa$region)
+
+pal2 <- colorFactor(palette = c("goldenrod", "blue"), domain = dat$extract_date)
+
+leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(-81.65868, 41.485, zoom = 10) %>%
+      leafem::addMouseCoordinates() %>% 
+  addPolygons(
+    data = spa,
+    layerId = ~SPA_NAME, 
+              fillColor = ~pal(region), 
+              color = "grey", 
+              weight = 1, 
+              fillOpacity = .4, 
+              popup = paste0(
+                "<b>Region: </b>", spa$region, "<br>",
+                "<b>SPA: </b>", spa$SPA_NAME, "<br>", 
+                "<b>Placarded/LHCO in region: </b>", spa$n_region, "<br>", 
+                "<b>Placarded/LHCO in SPA: </b>", spa$n_spa 
+                
+              )) %>% 
+  addCircleMarkers(data = dat, 
+                   stroke = FALSE, 
+                   fillColor = ~pal2(extract_date), 
+                   radius = 3, 
+                   fillOpacity  = .6, 
+                   popup = paste0(
+                "<b>Parcel: </b>", dat$parcel, "<br>",
+                "<b>Address: </b>", dat$formatted_address, "<br>",
+                "<b>Unit: </b>", dat$unit, "<br>",
+                "<b>Extract Date: </b>", dat$extract_date, "<br>",
+                "<b>SPA: </b>", dat$SPA_NAME, "<br>",
+                "<b>Region: </b>", dat$region, "<br>"
+                   )
+                   ) %>% 
+  addLegend(
+    data = dat,
+    "bottomright", 
+    pal = pal2, 
+    values = ~extract_date, 
+    title = "Record<br>origin"
+  )
+
+```
+
+### LHCO Density
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+dat_nogeo <- dat %>% 
+  select(-c(lat, lng)) %>% 
+  mutate(
+    lng = map_dbl(1:842, ~dat[[5]][[.x]][[1]]), 
+    lat = map_dbl(1:842, ~dat[[5]][[.x]][[2]]), 
+         ) %>% 
+  st_set_geometry(NULL) 
+
+reg1 <- spa %>% 
+  filter(region == "East") %>% 
+  st_union() %>% 
+  as.data.frame() %>% 
+  mutate(region = "East") %>% 
+  st_as_sf()
+reg2 <- spa %>% 
+  filter(region == "Central") %>% 
+  st_union() %>% 
+  as.data.frame() %>% 
+  mutate(region = "Central") %>% 
+  st_as_sf()
+reg3 <- spa %>% 
+  filter(region == "West") %>% 
+  st_union() %>% 
+  as.data.frame() %>% 
+  mutate(region = "West") %>% 
+  st_as_sf()
+
+reg <- reg1 %>% 
+  bind_rows(reg2) %>% 
+  bind_rows(reg3)
+rm(reg1, reg2, reg3)
+
+leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(-81.65868, 41.485, zoom = 10) %>%
+      leafem::addMouseCoordinates() %>% 
+  addPolygons(
+    data = reg,
+    layerId = ~region, 
+              fillColor = ~pal(region), 
+              color = "grey", 
+              weight = 1, 
+              fillOpacity = .4, 
+              popup = paste0(
+                "<b>Region: </b>", reg$region
+                
+              )) %>% 
+  addHeatmap(
+    data = dat_nogeo, 
+    lng = ~lng, 
+    lat = ~lat, 
+    radius = 5, 
+    blur = 10
+  )
+```
+
+
+### Age
+
+Median year built of all residential parcels
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+
+
+pal <- colorNumeric("viridis", domain = spa$med_yrbuilt)
+
+
+leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(-81.65868, 41.485, zoom = 10) %>%
+      leafem::addMouseCoordinates() %>% 
+  addPolygons(
+    data = spa,
+    layerId = ~SPA_NAME, 
+              fillColor = ~pal(med_yrbuilt), 
+              color = "grey", 
+              weight = 1, 
+              fillOpacity = .4, 
+              popup = paste0(
+                "<b>Region: </b>", spa$region, "<br>",
+                "<b>SPA: </b>", spa$SPA_NAME, "<br>", 
+                "<b>Residential parcels: </b>", spa$n, "<br>", 
+                "<b>Median year built: </b>", spa$med_yrbuilt
+                
+              ))  %>% 
+  addLegend(
+    data = spa,
+    "bottomright", 
+    pal = pal, 
+    values = ~med_yrbuilt, 
+    title = "Year<br>built", 
+    labFormat = labelFormat(big.mark = "")
+  )
+
+
+```
+
+
+
+
+### Pre-1978
+
+Share of residential parcels built prior to 1978
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+pal <- colorBin("viridis", domain = min(spa$pct_1978):max(spa$pct_1978))
+
+# pal <- colorNumeric("viridis", domain = spa$pct_1978)
+# 
+# spa <- spa %>% mutate(pct_1978x = if_else(pct_1978 < 50, 50, pct_1978))
+
+leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(-81.65868, 41.485, zoom = 10) %>%
+      leafem::addMouseCoordinates() %>% 
+  addPolygons(
+    data = spa,
+    layerId = ~SPA_NAME, 
+              fillColor = ~pal(pct_1978), 
+              color = "grey", 
+              weight = 1, 
+              fillOpacity = .4, 
+              popup = paste0(
+                "<b>Region: </b>", spa$region, "<br>",
+                "<b>SPA: </b>", spa$SPA_NAME, "<br>", 
+                "<b>Residential parcels: </b>", spa$n, "<br>", 
+                "<b>Percent built before 1978: </b>", spa$pct_1978
+                
+              ))  %>% 
+  addLegend(
+    data = spa,
+    "bottomright", 
+    pal = pal, 
+    values = ~pct_1978, 
+    title = "Built<br>before<br>1978", 
+    labFormat = labelFormat(suffix = "%")
+  )
+
+
+```
+
+
+### Condition
+
+Share of residential parcels with an assessed condition of "Fair" or worse, according to tax year 2021 property records provided by the Cuyahoga County Fiscal Office
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+pal <- colorNumeric("viridis", domain = spa$pct_poor)
+
+# pal <- colorNumeric("viridis", domain = spa$pct_1978)
+# 
+# spa <- spa %>% mutate(pct_1978x = if_else(pct_1978 < 50, 50, pct_1978))
+
+leaflet() %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(-81.65868, 41.485, zoom = 10) %>%
+      leafem::addMouseCoordinates() %>% 
+  addPolygons(
+    data = spa,
+    layerId = ~SPA_NAME, 
+              fillColor = ~pal(pct_poor), 
+              color = "grey", 
+              weight = 1, 
+              fillOpacity = .4, 
+              popup = paste0(
+                "<b>Region: </b>", spa$region, "<br>",
+                "<b>SPA: </b>", spa$SPA_NAME, "<br>", 
+                "<b>Residential parcels: </b>", spa$n, "<br>", 
+                "<b>Percent Fair or worse: </b>", spa$pct_poor
+                
+              ))  %>% 
+  addLegend(
+    data = spa,
+    "bottomright", 
+    pal = pal, 
+    values = ~pct_poor, 
+    title = "Bad<br>condition", 
+    labFormat = labelFormat(suffix = "%")
+  )
+
+
+```
+
+## {}
+<br>
+<br>
+<br>  
+
+
+## Residential Parcel Characteristics {.tabset}
+
+The following tables summarize the age and assessed quality/condition of residential parcels in each Cleveland SPA, and within the three defined regions.
+
+
+### By SPA
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+char_by_spa %>% 
+  select(region, SPA_NAME, n, med_yrbuilt, pct_1978, pct_poor) %>% 
+  arrange(region, SPA_NAME) %>% 
+  kbl(
+    col.names = c("Region", "SPA", "Residential parcels", "Median year built", "Built pre-1978(%)", "Poor Condition(%)"), 
+    full_width = TRUE
+    ) %>% 
+  kable_styling("striped") 
+
+
+```
+
+
+
+
+
+### By Region
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+char_by_region %>% 
+  select(region, n, med_yrbuilt, pct_1978, pct_poor) %>% 
+  kbl(
+    col.names = c("Region", "Residential parcels", "Median year built", "Built pre-1978(%)", "Poor Condition(%)"), 
+    full_width = TRUE
+    ) %>% 
+  kable_styling("striped") 
+
+
+```
+
+
+
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+# * The total number of LHCO/placarded properties is approximate because, with the information available, it is not clear in a small number of cases whether two records that share a common parcel id are associated with a single inspection/investigation, or with distinct investigations of multiple units in a multi-unit property. Records were deduplicated by parcel and unit number only when it was clear that two records were part of the same incident/investigation. Otherwise, all records were assumed to be describing distinct placarding/LHCO cases. 
+
+```
+
+
+
+
+
