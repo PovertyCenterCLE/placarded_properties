@@ -4,42 +4,101 @@ output: html_document
 date: '2022-12-06'
 ---
 
+<br>
+<br>
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+options(knitr.kable.NA = '')
 library(sf)
-library(mapview)
+library(leafem)
+library(leaflet)
+library(leaflet.extras)
+library(kableExtra)
 library(here)
 library(tidyverse)
-spa <- st_read("D:/ArcIMS/data 2010/Neighborhoods/City_of_Cleveland_Neighborhoods_2012_no_lake.shp")
+dat <- read_rds(here("data", "dat.rds"))
+set.seed(1)
+dat_order <- sample(1:nrow(dat), size = nrow(dat), replace = FALSE)
 
-```
+dat$order <- dat_order
+dat <- dat %>% 
+  arrange(order)
+
+by_spa <- dat %>% 
+  st_set_geometry(NULL) %>% 
+  add_count(region) %>% 
+  ungroup() %>% 
+  group_by(SPA_NAME) %>% 
+  summarise(
+    region = first(region),
+    n_spa = n(), 
+    n_region = first(n)
+  ) %>% 
+  ungroup()
+
+spa_region <- read_rds(here("data", "spa_region_ref.rds"))
 
 
-```{r echo=FALSE}
 
-spa_a <- spa %>%
-  st_centroid()
+spa <- st_read("D:/ArcIMS/data 2010/Neighborhoods/City_of_Cleveland_Neighborhoods_2012_no_lake.shp") %>% st_transform(crs = '+proj=longlat +datum=WGS84') %>% 
+  left_join(spa_region) %>% 
+  left_join(by_spa)
 
-spa_b <- spa_a %>%
+spa <- spa %>% 
   mutate(
-    lng = map_dbl(1:34, ~spa_a[["geometry"]][[.x]][[1]]),
-    lat = map_dbl(1:34, ~spa_a[["geometry"]][[.x]][[2]])) %>%
-  st_set_geometry(NULL)
+    n_spa = if_else(is.na(n_spa), NA_integer_, n_spa), 
+    n_region = case_when(
+      is.na(n_region) & region == "East" ~ first(by_spa$n_region[by_spa$region == "East"]), 
+      is.na(n_region) & region == "Central" ~ first(by_spa$n_region[by_spa$region == "Central"]), 
+      is.na(n_region) & region == "West" ~ first(by_spa$n_region[by_spa$region == "West"]), 
+      TRUE ~ n_region
+    )
+  )
 
-spa2 <- spa %>%
-  left_join(spa_b)
+char <- read_rds(here( "data", "parcel_char.rds"))
 
-spa3 <- spa2 %>%
-  mutate(
-    spa3 = case_when(
-      lng < spa2$lng[spa2$SPA_NAME == "Ohio City"] ~ "West",
-      lng > spa2$lng[spa2$SPA_NAME == "Broadway-Slavic Village"] ~ "East",
-      TRUE ~ "Central"
-    ))
-rm(spa_a, spa_b, spa2)
-# mapview(spa3, zcol = "spa3")
+char_by_spa <- char %>% 
+  group_by(SPA_NAME) %>% 
+  summarise(
+    n = n(),
+    n_poor = length(which(condition %in% c("Fair", "Poor", "Sound value (c)", "Unsound", "Very poor"))),
+    med_yrbuilt = median(yrbuilt, na.rm = T),
+    n_1978 = length(which(yrbuilt < 1978)), 
+    pct_poor = round(n_poor / n * 100, 2), 
+    pct_1978 = round(n_1978 / n * 100, 2)
+      ) %>% 
+  ungroup()
 
+char_by_region <- char %>% 
+  group_by(region) %>% 
+  summarise(
+    n = n(),
+    n_poor = length(which(condition %in% c("Fair", "Poor", "Sound value (c)", "Unsound", "Very poor"))),
+    med_yrbuilt = median(yrbuilt, na.rm = T),
+    n_1978 = length(which(yrbuilt < 1978)), 
+    pct_poor = round(n_poor / n * 100, 2), 
+    pct_1978 = round(n_1978 / n * 100, 2)
+      ) %>% 
+  ungroup()
+
+spa <- spa %>% 
+  left_join(char_by_spa)
+
+
+char_by_spa <- char %>% 
+  group_by(SPA_NAME) %>% 
+  summarise(
+    n = n(),
+    region = first(region),
+    n_poor = length(which(condition %in% c("Fair", "Poor", "Sound value (c)", "Unsound", "Very poor"))),
+    med_yrbuilt = median(yrbuilt, na.rm = T),
+    n_1978 = length(which(yrbuilt < 1978)), 
+    pct_poor = round(n_poor / n * 100, 2), 
+    pct_1978 = round(n_1978 / n * 100, 2)
+      ) %>% 
+  ungroup() %>% 
+  select(region, everything())
 
 ```
 

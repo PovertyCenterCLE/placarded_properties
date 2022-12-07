@@ -109,6 +109,7 @@ This document provides analysis of the homes issued a LHCO or placarded in the C
 <br>
 <br>
 
+### LHCO and placarded addresses by Cleveland SPA and region
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 spa2 <- spa %>% 
@@ -126,7 +127,7 @@ spa2 %>%
   add_row(SPA_NAME_East = "Total", n_spa_East = sum(spa2$n_spa_East, na.rm = T), SPA_NAME_Central = "Total", n_spa_Central = sum(spa2$n_spa_Central, na.rm = T),
           SPA_NAME_West = "Total", n_spa_West = sum(spa2$n_spa_West, na.rm = T)) %>% 
   kbl(
-    col.names = c("SPA", "parcels", "SPA", "parcels", "SPA", "parcels"), 
+    col.names = c("SPA", "Addresses", "SPA", "Addresses", "SPA", "Addresses"), 
     full_width = TRUE
     ) %>% 
   kable_styling("striped") %>% 
@@ -149,6 +150,8 @@ The next three maps use data on parcel characteristics obtained from the Cuyahog
 
 
 ### LHCO- Addresses
+
+
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -178,7 +181,8 @@ leaflet() %>%
               )) %>% 
   addCircleMarkers(data = dat, 
                    stroke = FALSE, 
-                   fillColor = ~pal2(extract_date), 
+                   fillColor = "goldenrod",
+                   # fillColor = ~pal2(extract_date), 
                    radius = 3, 
                    fillOpacity  = .6, 
                    popup = paste0(
@@ -189,14 +193,14 @@ leaflet() %>%
                 "<b>SPA: </b>", dat$SPA_NAME, "<br>",
                 "<b>Region: </b>", dat$region, "<br>"
                    )
-                   ) %>% 
-  addLegend(
-    data = dat,
-    "bottomright", 
-    pal = pal2, 
-    values = ~extract_date, 
-    title = "Record<br>origin"
-  )
+                   ) #%>% 
+  # addLegend(
+  #   data = dat,
+  #   "bottomright", 
+  #   pal = pal2, 
+  #   values = ~extract_date, 
+  #   title = "Record<br>origin"
+  # )
 
 ```
 
